@@ -1,7 +1,21 @@
 const $ = (s) => document.querySelector(s);
-const state = { products:[], category:"", query:"", sort:"featured", cart:JSON.parse(localStorage.getItem("mosey_cart")||"[]"), token:localStorage.getItem("mosey_token")||"", user:JSON.parse(localStorage.getItem("mosey_user")||"null"), authMode:"login" };
+const state = { products:[], category:"", query:"", sort:"featured", cart:JSON.parse(localStorage.getItem("mosey_cart")||"[]"), token:localStorage.getItem("mosey_token")||"", refreshToken:localStorage.getItem("mosey_refresh_token")||"", user:JSON.parse(localStorage.getItem("mosey_user")||"null"), authMode:"login" };
 const REMEMBER_EMAIL_KEY = "mosey_remember_email";
-const STATIC_PREVIEW = new URLSearchParams(location.search).has("static") || window.MOSEY_MODE !== "live";
+const API_BASE = String(window.MOSEY_API_BASE || "").replace(/\/+$/, "");
+const SB_MODE = window.MOSEY_MODE === "supabase" && !!window.MOSEY_SUPABASE_URL && !!window.MOSEY_SUPABASE_KEY;
+const SB_URL = String(window.MOSEY_SUPABASE_URL || "").replace(/\/+$/, "");
+const SB_KEY = String(window.MOSEY_SUPABASE_KEY || "");
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const STATIC_PREVIEW = new URLSearchParams(location.search).has("static") || (!API_BASE && !SB_MODE && window.MOSEY_MODE !== "live");
+const imageSrc = path => {
+  if (!path) return "https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80";
+  const value = String(path);
+  if (/^https?:\/\//i.test(value)) return value;
+  if (API_BASE) return API_BASE + (value.startsWith("/") ? value : "/" + value);
+  // GitHub Pages serves from a subdirectory, so site-root image paths must be relative there.
+  if (SB_MODE && value.startsWith("/")) return value.slice(1);
+  return value;
+};
 let staticCatalogCache = null;
 async function staticCatalog(){
   if(!staticCatalogCache){
@@ -17,6 +31,7 @@ const waLink = (text="Hello Mosey Shop, I'd like to place an order.") => `https:
 const escapeHtml = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove("show"),2800);}
 async function api(url, options={}) {
+  if(SB_MODE) return sbApi(url, options);
   if(STATIC_PREVIEW){
     const parsed=new URL(url,location.origin);
     if(parsed.pathname==="/api/products"){
@@ -31,7 +46,7 @@ async function api(url, options={}) {
   const headers = {...(options.headers||{})};
   if(state.token) headers.Authorization=`Bearer ${state.token}`;
   if(options.body && !(options.body instanceof FormData)) headers["Content-Type"]="application/json";
-  const res=await fetch(url,{...options,headers});
+  const res=await fetch(API_BASE ? new URL(url, API_BASE).toString() : url,{...options,headers});
   const data=await res.json().catch(()=>({}));
   if(!res.ok){
     if(res.status===401 && state.token){state.token="";state.user=null;localStorage.removeItem("mosey_token");localStorage.removeItem("mosey_user");const account=$("#accountBtn");if(account)account.textContent="Sign in";}
@@ -39,13 +54,298 @@ async function api(url, options={}) {
   }
   return data;
 }
+
+/* Supabase mode: the static site uses Supabase Auth + REST, secured by Row Level Security. */
+function sbErrorMessage(data, fallback){
+  if(data && typeof data === "object") return data.msg || data.message || data.error_description || data.error || fallback;
+  return fallback;
+}
+async function sbRead(res){
+  const text = await res.text();
+  if(!text) return {};
+  try { return JSON.parse(text); } catch { return { raw:text }; }
+}
+async function sbStoreSession(session){
+  state.token = session?.access_token || "";
+  if(session?.refresh_token) state.refreshToken = session.refresh_token;
+  if(session?.user){
+    const meta = session.user.user_metadata || {};
+    state.user = {
+      id: session.user.id,
+      name: meta.display_name || meta.name || String(session.user.email || "").split("@")[0],
+      email: session.user.email || "",
+      role: state.user?.role || "customer"
+    };
+  }
+  localStorage.setItem("mosey_token", state.token);
+  if(state.refreshToken) localStorage.setItem("mosey_refresh_token", state.refreshToken);
+  else localStorage.removeItem("mosey_refresh_token");
+  if(state.user) localStorage.setItem("mosey_user", JSON.stringify(state.user));
+  const account = $("#accountBtn");
+  if(account) account.textContent = state.user?.name?.split(" ")[0] || "Sign in";
+}
+function sbClearSession(){
+  state.token = ""; state.refreshToken = ""; state.user = null;
+  localStorage.removeItem("mosey_token");
+  localStorage.removeItem("mosey_refresh_token");
+  localStorage.removeItem("mosey_user");
+  const account = $("#accountBtn");
+  if(account) account.textContent = "Sign in";
+}
+async function sbRefreshSession(){
+  if(!state.refreshToken) throw new Error("Session expired. Please sign in again.");
+  const data = await sbRequest("/auth/v1/token?grant_type=refresh_token", {
+    method:"POST", body: JSON.stringify({ refresh_token: state.refreshToken })
+  });
+  await sbStoreSession(data);
+  return data.access_token;
+}
+async function sbRequest(path, { method="GET", body, token="", headers={}, retry=true } = {}){
+  const requestHeaders = { apikey:SB_KEY, Authorization:`Bearer ${token || SB_KEY}`, ...headers };
+  const init = { method, headers:requestHeaders };
+  if(body !== undefined){
+    if(typeof body === "string" || body instanceof Blob || (typeof FormData !== "undefined" && body instanceof FormData)){
+      init.body = body;
+      if(typeof body === "string" && !Object.keys(requestHeaders).some(k => k.toLowerCase() === "content-type")) requestHeaders["Content-Type"] = "application/json";
+    } else {
+      requestHeaders["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+  }
+  const res = await fetch(SB_URL + path, init);
+  const data = await sbRead(res);
+  if(res.status === 401 && token && state.refreshToken && retry){
+    try {
+      await sbRefreshSession();
+      return await sbRequest(path, { method, body, token:state.token, headers, retry:false });
+    } catch { sbClearSession(); }
+  }
+  if(!res.ok){
+    const err = new Error(sbErrorMessage(data, "Something went wrong."));
+    err.status = res.status; err.data = data;
+    throw err;
+  }
+  return data;
+}
+async function sbLoadRole(){
+  if(!state.token || !state.user?.id) return;
+  try {
+    const rows = await sbRequest(`/rest/v1/profiles?id=eq.${encodeURIComponent(state.user.id)}&select=role,display_name`, { token:state.token });
+    if(rows[0]){
+      state.user.role = rows[0].role || "customer";
+      if(rows[0].display_name) state.user.name = rows[0].display_name;
+      localStorage.setItem("mosey_user", JSON.stringify(state.user));
+    }
+  } catch {}
+}
+async function sbCompleteLogin(data){
+  await sbStoreSession(data);
+  await sbLoadRole();
+  return { token:state.token, refreshToken:state.refreshToken, user:state.user };
+}
+async function sbRequireAdmin(){
+  if(!state.token) throw new Error("Please sign in to continue.");
+  if(state.user?.role !== "admin") await sbLoadRole();
+  if(state.user?.role !== "admin") throw new Error("Administrator access required.");
+}
+function sbAuthError(err){
+  const message = String(err?.message || "");
+  if(/email_exists|already registered/i.test(message)) return new Error("An account with that email may already exist.");
+  if(/invalid_login_credentials/i.test(message)) return new Error("Email or password is incorrect.");
+  if(/weak_password|password.*short|at least/i.test(message)) return new Error("Use a password of at least 8 characters.");
+  return err;
+}
+const sbProduct = p => ({
+  id:Number(p.id), name:p.name || "", description:p.description || "", category:p.category || "General",
+  price:Number(p.price) || 0, stock:Number(p.stock) || 0, image:p.image_url || p.image || "",
+  featured:!!p.featured, active:p.active !== false, created_at:p.created_at
+});
+const sbOrder = o => ({
+  ...o, id:Number(o.id), total:Number(o.total) || 0,
+  items:(o.order_items || []).map(i => ({ name:i.product_name, price:Number(i.unit_price) || 0, quantity:Number(i.quantity) || 0 }))
+});
+function sbLocalChat(products, text, orders=[]){
+  const t = String(text || "").toLowerCase();
+  const tiles = list => list.slice(0,4).map(p => ({ id:p.id, name:p.name, image:p.image, price:p.price, stock:p.stock, category:p.category }));
+  if(/deliver|shipping|shipped|arrive|collection/.test(t)) return { reply:"We deliver within Nairobi and across Kenya. Delivery costs are confirmed before fulfilment, and you can also arrange collection from the store.", products:[] };
+  if(/pay|mpesa|payment|whatsapp/.test(t)) return { reply:`Pay by M-Pesa Send Money to ${WHATSAPP.display}, cash on delivery, or bank transfer. WhatsApp is used to confirm your order and payment code — we will never ask for your M-Pesa PIN.`, products:[] };
+  if(/order|track|status/.test(t)){
+    if(state.token){
+      const latest = orders[0];
+      return { reply:latest ? `Your latest order is #${latest.id}, currently ${latest.status}, totalling ${money(latest.total)}. You can open “My orders” from your account for the full list.` : "You have not placed an order yet. Add something to your bag, then sign in at checkout.", products:[] };
+    }
+    return { reply:"Sign in from the top-right of the page, then open “My orders” to track your purchases.", products:[] };
+  }
+  if(/under|below|cheap|gift|budget|affordable/.test(t)){
+    const found = products.filter(p => p.price < 2500).sort((a,b) => a.price - b.price);
+    return { reply:found.length ? `Here are affordable picks under ${money(2500)}.` : "Nothing is currently under that budget, but I can show you the full collection.", products:tiles(found) };
+  }
+  if(/tech|electronic|phone|earbud|headphone|watch|keyboard|speaker|charger|power/.test(t)){
+    const found = products.filter(p => p.category === "Electronics");
+    return { reply:found.length ? "Here are the tech pieces customers ask about most." : "The tech range is being restocked — please check back soon.", products:tiles(found) };
+  }
+  if(/home|decor|kitchen|lamp|clock|plant|candle/.test(t)){
+    const found = products.filter(p => p.category === "Home");
+    return { reply:found.length ? "Here are some home pieces to browse." : "Home pieces are being restocked soon.", products:tiles(found) };
+  }
+  if(/fashion|style|wear|shoe|bag|hoodie|wallet/.test(t)){
+    const found = products.filter(p => p.category === "Fashion");
+    return { reply:found.length ? "Here are the fashion pieces in the collection." : "Fashion pieces are being restocked soon.", products:tiles(found) };
+  }
+  const direct = products.filter(p => `${p.name} ${p.description} ${p.category}`.toLowerCase().includes(t));
+  if(direct.length) return { reply:`I found ${direct.length} item${direct.length === 1 ? "" : "s"} matching “${text}”.`, products:tiles(direct) };
+  return { reply:"I can help with products, prices, delivery and payment. Try “Show me tech” or “Gift under KES 2,000”.", products:tiles(products) };
+}
+async function sbApi(url, options={}){
+  const parsed = new URL(url, location.origin);
+  const path = parsed.pathname;
+  const method = String(options.method || "GET").toUpperCase();
+  const token = state.token;
+  let body = null;
+  if(options.body && !(typeof FormData !== "undefined" && options.body instanceof FormData)){
+    try { body = typeof options.body === "string" ? JSON.parse(options.body) : options.body; } catch { body = {}; }
+  }
+
+  if(path === "/api/auth/register" && method === "POST"){
+    const name = String(body?.name || "").trim();
+    const email = String(body?.email || "").trim().toLowerCase();
+    const password = String(body?.password || "");
+    if(name.length < 2 || name.length > 80 || email.length > 254 || !EMAIL_RE.test(email) || password.length < 8 || password.length > 72)
+      throw new Error("Enter your name, a valid email and a password of at least 8 characters.");
+    try {
+      const data = await sbRequest("/auth/v1/signup", { method:"POST", body: JSON.stringify({ email, password, data:{ display_name:name } }) });
+      if(!data.access_token){
+        const login = await sbRequest("/auth/v1/token?grant_type=password", { method:"POST", body: JSON.stringify({ email, password }) });
+        return await sbCompleteLogin(login);
+      }
+      return await sbCompleteLogin(data);
+    } catch(err) { throw sbAuthError(err); }
+  }
+  if(path === "/api/auth/login" && method === "POST"){
+    try {
+      const data = await sbRequest("/auth/v1/token?grant_type=password", { method:"POST", body: JSON.stringify({ email:String(body?.email || "").trim().toLowerCase(), password:String(body?.password || "") }) });
+      return await sbCompleteLogin(data);
+    } catch(err) { throw sbAuthError(err); }
+  }
+  if(path === "/api/auth/me") return sbRequest("/auth/v1/user", { token });
+
+  if(path === "/api/products" && method === "GET"){
+    const query = state.user?.role === "admin"
+      ? "/rest/v1/products?select=*&order=featured.desc,id.desc"
+      : "/rest/v1/products?select=*&active=eq.true&order=featured.desc,id.desc";
+    const rows = await sbRequest(query);
+    const q = String(parsed.searchParams.get("q") || "").trim().toLowerCase();
+    const category = String(parsed.searchParams.get("category") || "").trim();
+    return rows.map(sbProduct).filter(p => (!category || p.category === category) && (!q || `${p.name} ${p.description} ${p.category}`.toLowerCase().includes(q)));
+  }
+  if(path === "/api/categories"){
+    const rows = await sbRequest("/rest/v1/products?select=category&active=eq.true&order=category.asc");
+    return [...new Set(rows.map(r => r.category).filter(Boolean))].sort();
+  }
+  if(path === "/api/chat" && method === "POST"){
+    const products = await api("/api/products");
+    let orders = [];
+    if(state.token && /my order|track|status/i.test(String(body?.message || ""))){
+      try { orders = await api("/api/orders/mine"); } catch {}
+    }
+    return sbLocalChat(products, body?.message || "", orders);
+  }
+
+  if(path === "/api/orders" && method === "POST"){
+    if(!token) throw new Error("Please sign in to continue.");
+    const items = Array.isArray(body?.items) ? body.items : [];
+    const customerName = String(body?.customerName || "").trim();
+    const email = String(body?.email || "").trim().toLowerCase();
+    const phone = String(body?.phone || "").trim();
+    const address = String(body?.address || "").trim();
+    const paymentMethod = String(body?.paymentMethod || "").trim();
+    if(!items.length || items.length > 50 || customerName.length < 2 || customerName.length > 80 || email.length > 254 || !EMAIL_RE.test(email) || phone.length < 7 || phone.length > 30 || address.length < 8 || address.length > 300)
+      throw new Error("Complete valid delivery details and add at least one item.");
+    const cleanItems = items.map(i => ({ id:Number(i.id), quantity:Number(i.quantity) }));
+    const orderId = await sbRequest("/rest/v1/rpc/place_order", { method:"POST", token, body: JSON.stringify({
+      p_customer_name:customerName, p_email:email, p_phone:phone, p_address:address, p_payment_method:paymentMethod, p_items:cleanItems
+    }) });
+    const total = cleanItems.reduce((sum, item) => sum + (state.cart.find(i => Number(i.id) === item.id)?.price || 0) * item.quantity, 0);
+    return { message:"Order placed successfully.", orderId:Number(orderId), total };
+  }
+  if(path === "/api/orders/mine" && method === "GET"){
+    if(!token) throw new Error("Please sign in to continue.");
+    const rows = await sbRequest("/rest/v1/orders?select=*,order_items(*)&order=id.desc", { token });
+    return rows.map(sbOrder);
+  }
+
+  if(path === "/api/admin/summary"){
+    await sbRequireAdmin();
+    const [products, orders, profiles] = await Promise.all([
+      sbRequest("/rest/v1/products?select=id", { token }),
+      sbRequest("/rest/v1/orders?select=id,customer_name,total,status,created_at&order=id.desc", { token }),
+      sbRequest("/rest/v1/profiles?select=id,role", { token })
+    ]);
+    return {
+      products:products.length, orders:orders.length, customers:profiles.filter(p => p.role !== "admin").length,
+      revenue:orders.filter(o => o.status !== "Cancelled").reduce((sum,o) => sum + Number(o.total || 0), 0),
+      recentOrders:orders.slice(0,8).map(o => ({ id:Number(o.id), customer_name:o.customer_name, total:Number(o.total || 0), status:o.status, created_at:o.created_at }))
+    };
+  }
+  if(path === "/api/admin/orders" && method === "GET"){
+    await sbRequireAdmin();
+    const rows = await sbRequest("/rest/v1/orders?select=*,order_items(*)&order=id.desc", { token });
+    return rows.map(sbOrder);
+  }
+  if(path.startsWith("/api/admin/orders/") && method === "PATCH"){
+    await sbRequireAdmin();
+    const id = Number(path.split("/").pop());
+    await sbRequest("/rest/v1/rpc/set_order_status", { method:"POST", token, body: JSON.stringify({ p_order_id:id, p_status:String(body?.status || "") }) });
+    return { message:"Order status updated." };
+  }
+  if(path === "/api/admin/products" && method === "POST"){
+    await sbRequireAdmin();
+    const form = options.body;
+    if(!(typeof FormData !== "undefined" && form instanceof FormData)) throw new Error("Invalid product form.");
+    const name = String(form.get("name") || "").trim();
+    const description = String(form.get("description") || "").trim();
+    const category = String(form.get("category") || "General").trim() || "General";
+    const price = Number(form.get("price"));
+    const stock = Number(form.get("stock"));
+    if(name.length < 2 || name.length > 120 || description.length > 2000 || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0)
+      throw new Error("Enter a valid name, price and whole-number stock.");
+    let imageUrl = String(form.get("imageUrl") || "").trim();
+    const file = form.get("image");
+    if(file && typeof File !== "undefined" && file instanceof File && file.size){
+      if(file.size > 5 * 1024 * 1024) throw new Error("Image must be 5 MB or smaller.");
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const objectPath = `${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safeName}`;
+      await sbRequest(`/storage/v1/object/product-images/${objectPath}`, { method:"POST", token, body:file, headers:{ "Content-Type":file.type || "application/octet-stream", "x-upsert":"false" } });
+      imageUrl = `${SB_URL}/storage/v1/object/public/product-images/${objectPath}`;
+    }
+    const rows = await sbRequest("/rest/v1/products", { method:"POST", token, headers:{ Prefer:"return=representation" }, body: JSON.stringify({
+      name, description, category, price, stock, image_url:imageUrl, featured:String(form.get("featured")) === "1", active:true
+    }) });
+    return sbProduct(rows[0] || {});
+  }
+  if(path.startsWith("/api/admin/products/") && method === "DELETE"){
+    await sbRequireAdmin();
+    const id = Number(path.split("/").pop());
+    await sbRequest(`/rest/v1/products?id=eq.${encodeURIComponent(id)}`, { method:"DELETE", token, headers:{ Prefer:"return=minimal" } });
+    return { message:"Product deleted." };
+  }
+  if(path.startsWith("/api/admin/products/") && method === "PATCH"){
+    await sbRequireAdmin();
+    const id = Number(path.split("/").pop());
+    const patch = {};
+    for(const key of ["name","description","category","price","stock","image_url","featured","active"]) if(body?.[key] !== undefined) patch[key] = body[key];
+    const rows = await sbRequest(`/rest/v1/products?id=eq.${encodeURIComponent(id)}`, { method:"PATCH", token, headers:{ Prefer:"return=representation" }, body: JSON.stringify(patch) });
+    return sbProduct(rows[0] || {});
+  }
+  throw new Error("This feature is not available in the Supabase preview.");
+}
 function saveCart(){localStorage.setItem("mosey_cart",JSON.stringify(state.cart));renderCartCount();}
 function renderCartCount(){$("#cartCount").textContent=state.cart.reduce((n,i)=>n+i.quantity,0);}
 function openDrawer(html){$("#drawerContent").innerHTML=html;$("#overlay").hidden=false;document.body.style.overflow="hidden";}
 function closeDrawer(){$("#overlay").hidden=true;document.body.style.overflow="";}
 $("#closeDrawer").addEventListener("click",closeDrawer);
 $("#overlay").addEventListener("click",e=>{if(e.target===$("#overlay"))closeDrawer();});
-function productCard(p){return `<article class="product-card"><div class="product-image-wrap"><img class="product-image" src="${escapeHtml(p.image||"https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=900&q=80")}" alt="${escapeHtml(p.name)}" loading="lazy" onerror="this.src='https://placehold.co/600x600/f0f2ec/17231f?text=Product'"><span class="product-tag">${p.featured?"POPULAR PICK":escapeHtml(p.category.toUpperCase())}</span><button class="add-button" data-add="${p.id}" aria-label="Add ${escapeHtml(p.name)} to bag">+</button></div><div class="product-meta"><div><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.category)} · ${p.stock>0?`${p.stock} available`:"Out of stock"}</p></div><span class="price">${money(p.price)}</span></div></article>`;}
+function productCard(p){return `<article class="product-card"><div class="product-image-wrap"><img class="product-image" src="${escapeHtml(imageSrc(p.image))}" alt="${escapeHtml(p.name)}" loading="lazy" onerror="this.src='https://placehold.co/600x600/f0f2ec/17231f?text=Product'"><span class="product-tag">${p.featured?"POPULAR PICK":escapeHtml(p.category.toUpperCase())}</span><button class="add-button" data-add="${p.id}" aria-label="Add ${escapeHtml(p.name)} to bag">+</button></div><div class="product-meta"><div><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(p.category)} · ${p.stock>0?`${p.stock} available`:"Out of stock"}</p></div><span class="price">${money(p.price)}</span></div></article>`;}
 const categoryLabel = c => ({Electronics:"Tech", Fashion:"Style", Home:"Home"}[c] || c);
 async function loadProducts(){const grid=$("#productGrid");if(!grid)return;try{const params=new URLSearchParams();if(state.query)params.set("q",state.query);if(state.category)params.set("category",state.category);let rows=await api("/api/products?"+params.toString());if(state.sort==="price-asc")rows=[...rows].sort((a,b)=>a.price-b.price);else if(state.sort==="price-desc")rows=[...rows].sort((a,b)=>b.price-a.price);else if(state.sort==="name")rows=[...rows].sort((a,b)=>a.name.localeCompare(b.name));state.products=rows;grid.innerHTML=rows.length?rows.map(productCard).join(""):'<div class="empty-state">No products match your search. Try another term.</div>';const count=$("#productCount");if(count){const where=state.category?` in ${categoryLabel(state.category)}`:"";count.innerHTML=`<b>${rows.length}</b> ${rows.length===1?"product":"products"}${escapeHtml(where)}${state.query?` matching “${escapeHtml(state.query)}”`:""}`;}}catch(e){grid.innerHTML=`<div class="empty-state">${escapeHtml(e.message)}. Is the server running?</div>`;const count=$("#productCount");if(count)count.textContent="The collection could not be loaded.";}}
 async function loadFilters(){const box=$("#shopFilters");if(!box)return;try{const cats=await api("/api/categories");box.innerHTML=`<button class="filter active" data-category="">All items</button>`+cats.map(c=>`<button class="filter" data-category="${escapeHtml(c)}">${escapeHtml(categoryLabel(c))}</button>`).join("");const active=box.querySelector(`[data-category="${state.category}"]`);if(active){box.querySelectorAll(".filter").forEach(x=>x.classList.remove("active"));active.classList.add("active");}}catch(e){/* keep the static fallback filters */}}
@@ -59,7 +359,7 @@ document.addEventListener("click",e=>{const b=e.target.closest(".filter");if(!b)
 if($("#sortProducts"))$("#sortProducts").addEventListener("change",e=>{state.sort=e.target.value;loadProducts();});
 if($("#shopNow"))$("#shopNow").onclick=()=>$("#shop").scrollIntoView({behavior:"smooth"});
 if($("#promoShop"))$("#promoShop").onclick=()=>{location.href="shop.html";};
-function cartView(){const total=state.cart.reduce((n,i)=>n+i.price*i.quantity,0);const cartMessage=state.cart.length?`Hello Mosey Shop! I'd like to order:\n${state.cart.map(i=>`• ${i.name} × ${i.quantity}`).join("\n")}\n\nSubtotal: ${money(total)}. Please confirm availability, delivery and the M-Pesa total.`:"Hello Mosey Shop, I'd like to place an order.";openDrawer(`<p class="eyebrow">YOUR SELECTION</p><h2 id="drawerTitle">Your shopping bag</h2>${state.cart.length?state.cart.map(i=>`<div class="cart-row"><img src="${escapeHtml(i.image||"")}" alt=""><div><b>${escapeHtml(i.name)}</b><small>${money(i.price)} each</small><div class="qty-control"><button data-qty="${i.id}" data-change="-1">−</button><span>${i.quantity}</span><button data-qty="${i.id}" data-change="1">+</button><button class="link-button danger" data-remove="${i.id}">Remove</button></div></div><b>${money(i.price*i.quantity)}</b></div>`).join(""):`<div class="empty-state">Your bag is waiting for something good.</div>`}<div class="cart-total"><span>Subtotal</span><span>${money(total)}</span></div><p class="muted">Delivery costs, if applicable, can be confirmed by the store before fulfilment.</p>${state.cart.length?`<button class="primary-button" style="width:100%" id="checkoutBtn">Continue to checkout ↗</button><a class="secondary-button" href="${waLink(cartMessage)}" target="_blank" rel="noopener" style="display:block;width:100%;margin-top:10px;text-align:center;box-sizing:border-box">Order on WhatsApp ↗</a>`:""}<p class="muted">Pay by M-Pesa Send Money to <b>${WHATSAPP.display}</b>, or choose cash on delivery at checkout. WhatsApp confirms your order and your payment code.</p>`);
+function cartView(){const total=state.cart.reduce((n,i)=>n+i.price*i.quantity,0);const cartMessage=state.cart.length?`Hello Mosey Shop! I'd like to order:\n${state.cart.map(i=>`• ${i.name} × ${i.quantity}`).join("\n")}\n\nSubtotal: ${money(total)}. Please confirm availability, delivery and the M-Pesa total.`:"Hello Mosey Shop, I'd like to place an order.";openDrawer(`<p class="eyebrow">YOUR SELECTION</p><h2 id="drawerTitle">Your shopping bag</h2>${state.cart.length?state.cart.map(i=>`<div class="cart-row"><img src="${escapeHtml(i.image?imageSrc(i.image):"")}" alt=""><div><b>${escapeHtml(i.name)}</b><small>${money(i.price)} each</small><div class="qty-control"><button data-qty="${i.id}" data-change="-1">−</button><span>${i.quantity}</span><button data-qty="${i.id}" data-change="1">+</button><button class="link-button danger" data-remove="${i.id}">Remove</button></div></div><b>${money(i.price*i.quantity)}</b></div>`).join(""):`<div class="empty-state">Your bag is waiting for something good.</div>`}<div class="cart-total"><span>Subtotal</span><span>${money(total)}</span></div><p class="muted">Delivery costs, if applicable, can be confirmed by the store before fulfilment.</p>${state.cart.length?`<button class="primary-button" style="width:100%" id="checkoutBtn">Continue to checkout ↗</button><a class="secondary-button" href="${waLink(cartMessage)}" target="_blank" rel="noopener" style="display:block;width:100%;margin-top:10px;text-align:center;box-sizing:border-box">Order on WhatsApp ↗</a>`:""}<p class="muted">Pay by M-Pesa Send Money to <b>${WHATSAPP.display}</b>, or choose cash on delivery at checkout. WhatsApp confirms your order and your payment code.</p>`);
 }
 $("#cartBtn").onclick=cartView;
 $("#drawerContent").addEventListener("click",async e=>{
@@ -83,8 +383,15 @@ $("#drawerContent").addEventListener("submit",async e=>{
  if(e.target.id==="checkoutForm"){e.preventDefault();const f=new FormData(e.target);const body=Object.fromEntries(f.entries());body.items=state.cart.map(i=>({id:i.id,quantity:i.quantity}));const paymentMethod=body.paymentMethod;const summary=state.cart.map(i=>`• ${i.name} × ${i.quantity}`).join("\n");try{const d=await api("/api/orders",{method:"POST",body:JSON.stringify(body)});state.cart=[];saveCart();loadProducts();toast(`Order #${d.orderId} placed.`);const confirmation=waLink(`Hello Mosey Shop! I've placed order #${d.orderId} for ${money(d.total)} (${paymentMethod}).\n\n${summary}\n\nName: ${body.customerName}\nPhone: ${body.phone}\nDelivery: ${body.address}\n\nPlease confirm my order${paymentMethod==="M-Pesa via WhatsApp"?` and look out for my M-Pesa payment to ${WHATSAPP.display}`:""}.`);openDrawer(`<p class="eyebrow">ORDER CONFIRMED</p><h2>Thank you for your order.</h2><div class="notice">Your order number is <b>#${d.orderId}</b>. Total: <b>${money(d.total)}</b>. Payment method: <b>${escapeHtml(paymentMethod)}</b>. Save this number for your records.</div>${paymentMethod==="M-Pesa via WhatsApp"?`<div class="notice whatsapp-note">Send <b>${money(d.total)}</b> by M-Pesa Send Money to <b>${WHATSAPP.display}</b>, then share the confirmation code on WhatsApp.</div>`:""}<p>Order status: Pending. The store can update the status from its admin dashboard.</p><a class="primary-button" href="${confirmation}" target="_blank" rel="noopener" style="display:block;text-align:center;box-sizing:border-box">Confirm on WhatsApp ↗</a><button class="secondary-button" id="myOrdersBtn" style="width:100%;margin-top:10px">View my orders ↗</button>`);}catch(err){toast(err.message);}}
  if(e.target.id==="addProductForm"){e.preventDefault();try{const f=new FormData(e.target);await api("/api/admin/products",{method:"POST",body:f});toast("Product added.");adminProductsView();loadProducts();}catch(err){toast(err.message);}}
 });
-function setSession(d){state.token=d.token;state.user=d.user;localStorage.setItem("mosey_token",state.token);localStorage.setItem("mosey_user",JSON.stringify(state.user));$("#accountBtn").textContent=state.user.name.split(" ")[0];}
-function logout(){state.token="";state.user=null;localStorage.removeItem("mosey_token");localStorage.removeItem("mosey_user");$("#accountBtn").textContent="Sign in";}
+function setSession(d){
+  if(SB_MODE){sbStoreSession({access_token:d.token, refresh_token:d.refreshToken, user:d.user});return;}
+  state.token=d.token;state.user=d.user;localStorage.setItem("mosey_token",state.token);localStorage.setItem("mosey_user",JSON.stringify(state.user));$("#accountBtn").textContent=state.user.name.split(" ")[0];
+}
+function logout(){
+  const token=state.token;
+  sbClearSession();
+  if(SB_MODE && token)sbRequest("/auth/v1/logout",{method:"POST",token}).catch(()=>{});
+}
 $("#accountBtn").onclick=()=>state.token?accountView():signInView();
 function accountView(){openDrawer(`<p class="eyebrow">YOUR ACCOUNT</p><h2 id="drawerTitle">Hello, ${escapeHtml(state.user?.name||"there")}.</h2><p>${escapeHtml(state.user?.email||"")}</p><button class="primary-button" id="myOrdersBtn" style="width:100%">My orders ↗</button><button class="secondary-button" id="logoutBtn" style="margin-top:12px">Sign out</button>${state.user?.role==="admin"?`<button class="secondary-button" id="showAdmin" style="margin:12px 0 0 8px">Open admin dashboard</button>`:""}`);}
 function checkoutView(){if(!state.cart.length)return cartView();const total=state.cart.reduce((n,i)=>n+i.price*i.quantity,0);openDrawer(`<p class="eyebrow">ALMOST YOURS</p><h2 id="drawerTitle">Checkout</h2><p>Order total: <b>${money(total)}</b></p><form id="checkoutForm" class="form-stack"><label>Full name<input name="customerName" required value="${escapeHtml(state.user?.name||"")}" autocomplete="name"></label><label>Email<input name="email" type="email" required value="${escapeHtml(state.user?.email||"")}" autocomplete="email"></label><label>Phone number<input name="phone" type="tel" required placeholder="+254 7XX XXX XXX"></label><label>Delivery address<input name="address" required placeholder="Town, estate, street and delivery details"></label><label>Payment method<select name="paymentMethod" required><option value="Cash on delivery">Cash on delivery</option><option value="M-Pesa on delivery">M-Pesa (confirm on delivery)</option><option value="M-Pesa via WhatsApp">M-Pesa via WhatsApp — pay ${WHATSAPP.display}</option><option value="Bank transfer">Bank transfer (manual confirmation)</option></select></label><div class="notice">M-Pesa payments go to <b>${WHATSAPP.display}</b> by Send Money. WhatsApp is used to confirm your order and M-Pesa code — it never asks for your PIN.</div><button class="primary-button">Place order · ${money(total)} ↗</button><button type="button" class="secondary-button" id="backToCart">Back to bag</button></form>`);$("#backToCart").onclick=cartView;}
@@ -159,7 +466,7 @@ function chatBubble(role, text, products=[]) {
       const img = document.createElement("img");
       img.alt = "";
       img.loading = "lazy";
-      img.src = item.image || "";
+      img.src = imageSrc(item.image);
       img.onerror = () => { img.src = "https://placehold.co/120x120/f0f2ec/17231f?text=%2B"; };
       const info = document.createElement("div");
       const name = document.createElement("b");

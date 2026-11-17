@@ -1,3 +1,5 @@
-// Default for the static GitHub Pages preview: accounts/orders are unavailable.
-// The Express server overrides this route with live mode on every real deployment.
-window.MOSEY_MODE = "static";
+// Runtime mode for the GitHub Pages static site.
+// "supabase" enables accounts/orders directly from the browser, secured by Row Level Security.
+window.MOSEY_MODE = "supabase";
+window.MOSEY_SUPABASE_URL = "https://riskumvqfhddpsdasocn.supabase.co";
+window.MOSEY_SUPABASE_KEY = "sb_publishable_KkuXYBxnYYLhQkxKEXMjwg_Xrter-gH";

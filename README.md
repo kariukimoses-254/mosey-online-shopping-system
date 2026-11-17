@@ -23,7 +23,7 @@ The `main` branch publishes the `public/` folder to GitHub Pages at
 https://kariukimoses.is-a.dev/mosey-online-shopping-system/
 (also reachable at https://kariukimoses-254.github.io/mosey-online-shopping-system/, which redirects to the custom domain).
 
-That preview uses `public/products.json` as a read-only catalogue so browsing, search, filters, the bag and WhatsApp ordering work without a server. Accounts, sign-in, checkout, order tracking, the admin dashboard and the AI assistant require the Express + SQLite app above; they are intentionally unavailable in the static preview.
+The preview is connected to Supabase, so browsing, sign-up/sign-in, checkout, order tracking, the admin dashboard and the built-in shopping assistant all work there. `public/app-config.js` selects the mode: `supabase` for GitHub Pages, while the Express server overrides that route with `live` for local/Node deployments. `public/products.json` remains as an offline fallback when the site is opened with `?static=1`.
 
 ## Run locally
 1. Extract the ZIP.
@@ -40,9 +40,26 @@ That preview uses `public/products.json` as a read-only catalogue so browsing, s
    or `npm start`.
 6. Open `http://localhost:5000`.
 
+## GitHub Pages + Supabase (active setup)
+
+The GitHub Pages preview uses Supabase Auth and the REST API directly with a publishable key and Row Level Security. `supabase/setup.sql` contains the full database schema, policies, stock-safe `place_order` RPC, admin `set_order_status` RPC and seed products.
+
+To reproduce it in a new Supabase project:
+1. Create a free project and run `supabase/setup.sql` in the SQL Editor.
+2. In **Authentication → Sign In / Providers**, leave Email enabled and turn **Confirm email** off.
+3. Copy the Project URL and publishable key into `public/app-config.js`.
+4. To grant admin access to a customer account, run:
+   ```sql
+   update public.profiles
+   set role = 'admin'
+   where id = (select id from auth.users where email = 'you@example.com');
+   ```
+
+Never put a Supabase secret/service-role key in `public/app-config.js`.
+
 ## Deploy the full app (Render)
 
-The GitHub Pages link is a static preview without accounts. To get a public URL where **sign-in, checkout, orders and the admin dashboard work**, deploy the Express app:
+The Express + SQLite app is an alternative to Supabase for a single-origin deployment. To deploy it:
 
 1. Push this repository to GitHub (the `main` branch already builds the Pages preview).
 2. Sign in at https://render.com with GitHub and choose **New + → Blueprint**.
@@ -108,7 +125,5 @@ This is a functional development starter, not a production-audited commerce plat
 Currency display is Kenyan shillings (KES). Change it in `public/app.js` if your store uses another currency.
 
 
-## Additional reference: Supabase and database security
-The third supplied video appears to discuss Supabase authentication, signed tokens, Postgres access rules/Row Level Security (RLS), order visibility, and payment workflows. To reflect that architecture, this ZIP includes `supabase/schema.sql` as an optional PostgreSQL/Supabase schema with RLS policies for public product browsing, customer-owned orders, and admin-only product/order management.
-
-**Important:** the running starter still uses its included Express + SQLite backend. The Supabase SQL file is a migration/reference option and is not automatically connected to the current frontend. Do not run both backends as if they share data. If migrating to Supabase, update the application API and implement server-side atomic checkout/stock validation; never put a Supabase service-role key in browser code. Payment collection still requires a verified payment gateway.
+## Supabase and database security
+`supabase/setup.sql` applies Row Level Security so customers can read active products, see only their own orders, and admins can manage products/orders. Checkout and stock changes run inside the `place_order` database function; never expose a service-role key in browser code. Payment collection still requires manual confirmation or a verified payment gateway.
