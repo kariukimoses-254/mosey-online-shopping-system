@@ -23,7 +23,7 @@ The `main` branch publishes the `public/` folder to GitHub Pages at
 https://kariukimoses.is-a.dev/mosey-online-shopping-system/
 (also reachable at https://kariukimoses-254.github.io/mosey-online-shopping-system/, which redirects to the custom domain).
 
-The preview is connected to Supabase, so browsing, sign-up/sign-in, checkout, order tracking, the admin dashboard and the built-in shopping assistant all work there. `public/app-config.js` selects the mode: `supabase` for GitHub Pages, while the Express server overrides that route with `live` for local/Node deployments. `public/products.json` remains as an offline fallback when the site is opened with `?static=1`.
+The preview is connected to Supabase, so browsing, sign-up/sign-in, checkout, order tracking, the admin dashboard and the built-in shopping assistant all work there. Customers see every order, including pending ones, and can refresh to see statuses confirmed by the store. Administrators see all shop orders, order totals and customer counts, can update order statuses, and can add or edit products—including uploading product pictures from the admin UI with a live preview. `public/app-config.js` selects the mode: `supabase` for GitHub Pages, while the Express server overrides that route with `live` for local/Node deployments. `public/products.json` remains as an offline fallback when the site is opened with `?static=1`.
 
 ## Run locally
 1. Extract the ZIP.
@@ -42,7 +42,7 @@ The preview is connected to Supabase, so browsing, sign-up/sign-in, checkout, or
 
 ## GitHub Pages + Supabase (active setup)
 
-The GitHub Pages preview uses Supabase Auth and the REST API directly with a publishable key and Row Level Security. `supabase/setup.sql` contains the full database schema, policies, stock-safe `place_order` RPC, admin `set_order_status` RPC and seed products.
+The GitHub Pages preview uses Supabase Auth and the REST API directly with a publishable key and Row Level Security. `supabase/setup.sql` contains the full database schema, policies, stock-safe `place_order` RPC, admin `set_order_status` RPC, product-image storage policies, seed products and the product ID sequence fix needed after inserting the seeded rows.
 
 To reproduce it in a new Supabase project:
 1. Create a free project and run `supabase/setup.sql` in the SQL Editor.

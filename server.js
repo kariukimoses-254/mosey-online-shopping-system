@@ -239,6 +239,7 @@ app.get("/api/admin/summary", auth, admin, (_req,res) => {
     orders:db.prepare("SELECT COUNT(*) n FROM orders").get().n,
     customers:db.prepare("SELECT COUNT(*) n FROM users WHERE role='customer'").get().n,
     revenue:db.prepare("SELECT COALESCE(SUM(total),0) n FROM orders WHERE status!='Cancelled'").get().n,
+    allOrders:db.prepare("SELECT id,customer_name,total,status,created_at FROM orders ORDER BY id DESC").all(),
     recentOrders:db.prepare("SELECT id,customer_name,total,status,created_at FROM orders ORDER BY id DESC LIMIT 8").all()
   });
 });
@@ -291,7 +292,7 @@ app.post("/api/admin/products", auth, admin, upload.single("image"), (req,res) =
     .run(name,description,category,price,stock,image,featured);
   res.status(201).json(db.prepare("SELECT * FROM products WHERE id=?").get(result.lastInsertRowid));
 });
-app.patch("/api/admin/products/:id", auth, admin, (req,res) => {
+app.patch("/api/admin/products/:id", auth, admin, upload.single("image"), (req,res) => {
   const p = db.prepare("SELECT * FROM products WHERE id=?").get(req.params.id);
   if (!p) return res.status(404).json({error:"Product not found."});
   const b = req.body || {};
@@ -300,12 +301,18 @@ app.patch("/api/admin/products/:id", auth, admin, (req,res) => {
   const category = b.category === undefined ? p.category : clean(b.category);
   const price = b.price === undefined ? p.price : Number(b.price);
   const stock = b.stock === undefined ? p.stock : Number(b.stock);
-  const image = b.image === undefined ? p.image : safeImageUrl(b.image);
-  const featured = b.featured === undefined ? p.featured : (b.featured ? 1 : 0);
+  let imageValue = b.image !== undefined ? b.image : (b.imageUrl !== undefined ? b.imageUrl : undefined);
+  if (imageValue === "" && b.currentImage) imageValue = b.currentImage;
+  let image = imageValue === undefined ? p.image : safeImageUrl(imageValue);
+  if (req.file) image = "/uploads/" + req.file.filename;
+  const featured = b.featured === undefined ? p.featured : (String(b.featured) === "1" || b.featured === true ? 1 : 0);
   const valid = name.length >= 2 && name.length <= 120 && description.length <= 2000 && category.length <= 60 &&
     Number.isFinite(price) && price >= 0 && price <= 1e9 &&
     Number.isInteger(stock) && stock >= 0 && stock <= 1e6 && image !== null;
-  if (!valid) return res.status(400).json({error:"Enter a valid name, price, whole-number stock and image URL."});
+  if (!valid) {
+    if (req.file) fs.unlink(req.file.path, () => {});
+    return res.status(400).json({error:"Enter a valid name, price, whole-number stock and image URL."});
+  }
   db.prepare("UPDATE products SET name=?,description=?,category=?,price=?,stock=?,image=?,featured=? WHERE id=?")
     .run(name,description,category,price,stock,image,featured,p.id);
   res.json(db.prepare("SELECT * FROM products WHERE id=?").get(p.id));

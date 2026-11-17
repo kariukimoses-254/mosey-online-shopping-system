@@ -227,5 +227,8 @@ INSERT INTO public.products (id,name,description,category,price,stock,image_url,
 (4, 'Minimal Desk Lamp', 'Warm lighting and a modern, understated design.', 'Home', 1899, 15, 'https://images.unsplash.com/photo-1507473885765-e6ed057f782c?auto=format&fit=crop&w=900&q=85', false, true)
 ON CONFLICT (id) DO NOTHING;
 
+-- The seed rows use explicit ids, so advance the identity sequence for future products.
+select setval(pg_get_serial_sequence('public.products','id'), coalesce((select max(id) from public.products), 1), true);
+
 -- To make an admin: after signing up, run this in SQL Editor with that user's email:
 -- update public.profiles set role = 'admin' where id = (select id from auth.users where email = 'you@example.com');

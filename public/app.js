@@ -29,6 +29,8 @@ const money = n => new Intl.NumberFormat("en-KE",{style:"currency",currency:"KES
 const WHATSAPP = { local:"0793489901", display:"0793 489 901", international:"+254 793 489 901", wa:"254793489901" };
 const waLink = (text="Hello Mosey Shop, I'd like to place an order.") => `https://wa.me/${WHATSAPP.wa}?text=${encodeURIComponent(text)}`;
 const escapeHtml = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const statusPill = status => `<span class="status-pill status-${String(status||"").toLowerCase().replace(/\s+/g,"-")}">${escapeHtml(status||"Unknown")}</span>`;
+const formatDate = value => { const d=new Date(value); return Number.isNaN(d.getTime()) ? String(value||"") : d.toLocaleString("en-KE",{dateStyle:"medium",timeStyle:"short"}); };
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove("show"),2800);}
 async function api(url, options={}) {
   if(SB_MODE) return sbApi(url, options);
@@ -196,6 +198,33 @@ function sbLocalChat(products, text, orders=[]){
   if(direct.length) return { reply:`I found ${direct.length} item${direct.length === 1 ? "" : "s"} matching “${text}”.`, products:tiles(direct) };
   return { reply:"I can help with products, prices, delivery and payment. Try “Show me tech” or “Gift under KES 2,000”.", products:tiles(products) };
 }
+async function sbProductPayload(form, token){
+  const name = String(form.get("name") || "").trim();
+  const description = String(form.get("description") || "").trim();
+  const category = String(form.get("category") || "General").trim() || "General";
+  const price = Number(form.get("price"));
+  const stock = Number(form.get("stock"));
+  if(name.length < 2 || name.length > 120 || description.length > 2000 || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0)
+    throw new Error("Enter a valid name, price and whole-number stock.");
+  let imageUrl = String(form.get("imageUrl") || "").trim();
+  const currentImage = String(form.get("currentImage") || "").trim();
+  const file = form.get("image");
+  if(file && typeof File !== "undefined" && file instanceof File && file.size){
+    if(file.size > 5 * 1024 * 1024) throw new Error("Image must be 5 MB or smaller.");
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const objectPath = `${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safeName}`;
+    await sbRequest(`/storage/v1/object/product-images/${objectPath}`, { method:"POST", token, body:file, headers:{ "Content-Type":file.type || "application/octet-stream", "x-upsert":"false" } });
+    imageUrl = `${SB_URL}/storage/v1/object/public/product-images/${objectPath}`;
+  } else if(!imageUrl && currentImage) {
+    imageUrl = currentImage;
+  }
+  const activeValues = typeof form.getAll === "function" ? form.getAll("active") : [];
+  return {
+    name, description, category, price, stock, image_url:imageUrl,
+    featured:String(form.get("featured")) === "1",
+    active:activeValues.length ? activeValues.includes("1") : true
+  };
+}
 async function sbApi(url, options={}){
   const parsed = new URL(url, location.origin);
   const path = parsed.pathname;
@@ -284,6 +313,7 @@ async function sbApi(url, options={}){
     return {
       products:products.length, orders:orders.length, customers:profiles.filter(p => p.role !== "admin").length,
       revenue:orders.filter(o => o.status !== "Cancelled").reduce((sum,o) => sum + Number(o.total || 0), 0),
+      allOrders:orders.map(o => ({ id:Number(o.id), customer_name:o.customer_name, total:Number(o.total || 0), status:o.status, created_at:o.created_at })),
       recentOrders:orders.slice(0,8).map(o => ({ id:Number(o.id), customer_name:o.customer_name, total:Number(o.total || 0), status:o.status, created_at:o.created_at }))
     };
   }
@@ -300,27 +330,9 @@ async function sbApi(url, options={}){
   }
   if(path === "/api/admin/products" && method === "POST"){
     await sbRequireAdmin();
-    const form = options.body;
-    if(!(typeof FormData !== "undefined" && form instanceof FormData)) throw new Error("Invalid product form.");
-    const name = String(form.get("name") || "").trim();
-    const description = String(form.get("description") || "").trim();
-    const category = String(form.get("category") || "General").trim() || "General";
-    const price = Number(form.get("price"));
-    const stock = Number(form.get("stock"));
-    if(name.length < 2 || name.length > 120 || description.length > 2000 || !Number.isFinite(price) || price < 0 || !Number.isInteger(stock) || stock < 0)
-      throw new Error("Enter a valid name, price and whole-number stock.");
-    let imageUrl = String(form.get("imageUrl") || "").trim();
-    const file = form.get("image");
-    if(file && typeof File !== "undefined" && file instanceof File && file.size){
-      if(file.size > 5 * 1024 * 1024) throw new Error("Image must be 5 MB or smaller.");
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const objectPath = `${Date.now()}-${Math.random().toString(36).slice(2,8)}-${safeName}`;
-      await sbRequest(`/storage/v1/object/product-images/${objectPath}`, { method:"POST", token, body:file, headers:{ "Content-Type":file.type || "application/octet-stream", "x-upsert":"false" } });
-      imageUrl = `${SB_URL}/storage/v1/object/public/product-images/${objectPath}`;
-    }
-    const rows = await sbRequest("/rest/v1/products", { method:"POST", token, headers:{ Prefer:"return=representation" }, body: JSON.stringify({
-      name, description, category, price, stock, image_url:imageUrl, featured:String(form.get("featured")) === "1", active:true
-    }) });
+    if(!(typeof FormData !== "undefined" && options.body instanceof FormData)) throw new Error("Invalid product form.");
+    const payload = await sbProductPayload(options.body, token);
+    const rows = await sbRequest("/rest/v1/products", { method:"POST", token, headers:{ Prefer:"return=representation" }, body: JSON.stringify(payload) });
     return sbProduct(rows[0] || {});
   }
   if(path.startsWith("/api/admin/products/") && method === "DELETE"){
@@ -332,8 +344,9 @@ async function sbApi(url, options={}){
   if(path.startsWith("/api/admin/products/") && method === "PATCH"){
     await sbRequireAdmin();
     const id = Number(path.split("/").pop());
-    const patch = {};
-    for(const key of ["name","description","category","price","stock","image_url","featured","active"]) if(body?.[key] !== undefined) patch[key] = body[key];
+    let patch = {};
+    if(typeof FormData !== "undefined" && options.body instanceof FormData) patch = await sbProductPayload(options.body, token);
+    else for(const key of ["name","description","category","price","stock","image_url","featured","active"]) if(body?.[key] !== undefined) patch[key] = body[key];
     const rows = await sbRequest(`/rest/v1/products?id=eq.${encodeURIComponent(id)}`, { method:"PATCH", token, headers:{ Prefer:"return=representation" }, body: JSON.stringify(patch) });
     return sbProduct(rows[0] || {});
   }
@@ -381,7 +394,17 @@ function authView(message=""){if(STATIC_PREVIEW){openDrawer(`<p class="eyebrow">
 $("#drawerContent").addEventListener("submit",async e=>{
  if(e.target.id==="authForm"){e.preventDefault();const f=new FormData(e.target),body=Object.fromEntries(f.entries());const reg=state.authMode==="register";const remember=!reg&&!!e.target.elements.remember?.checked;delete body.remember;try{const d=await api("/api/auth/"+(reg?"register":"login"),{method:"POST",body:JSON.stringify(body)});setSession(d);if(remember)localStorage.setItem(REMEMBER_EMAIL_KEY,d.user.email);else if(!reg)localStorage.removeItem(REMEMBER_EMAIL_KEY);toast(`Welcome, ${d.user.name}.`);if(state.cart.length)checkoutView();else accountView();}catch(err){toast(err.message);} }
  if(e.target.id==="checkoutForm"){e.preventDefault();const f=new FormData(e.target);const body=Object.fromEntries(f.entries());body.items=state.cart.map(i=>({id:i.id,quantity:i.quantity}));const paymentMethod=body.paymentMethod;const summary=state.cart.map(i=>`• ${i.name} × ${i.quantity}`).join("\n");try{const d=await api("/api/orders",{method:"POST",body:JSON.stringify(body)});state.cart=[];saveCart();loadProducts();toast(`Order #${d.orderId} placed.`);const confirmation=waLink(`Hello Mosey Shop! I've placed order #${d.orderId} for ${money(d.total)} (${paymentMethod}).\n\n${summary}\n\nName: ${body.customerName}\nPhone: ${body.phone}\nDelivery: ${body.address}\n\nPlease confirm my order${paymentMethod==="M-Pesa via WhatsApp"?` and look out for my M-Pesa payment to ${WHATSAPP.display}`:""}.`);openDrawer(`<p class="eyebrow">ORDER CONFIRMED</p><h2>Thank you for your order.</h2><div class="notice">Your order number is <b>#${d.orderId}</b>. Total: <b>${money(d.total)}</b>. Payment method: <b>${escapeHtml(paymentMethod)}</b>. Save this number for your records.</div>${paymentMethod==="M-Pesa via WhatsApp"?`<div class="notice whatsapp-note">Send <b>${money(d.total)}</b> by M-Pesa Send Money to <b>${WHATSAPP.display}</b>, then share the confirmation code on WhatsApp.</div>`:""}<p>Order status: Pending. The store can update the status from its admin dashboard.</p><a class="primary-button" href="${confirmation}" target="_blank" rel="noopener" style="display:block;text-align:center;box-sizing:border-box">Confirm on WhatsApp ↗</a><button class="secondary-button" id="myOrdersBtn" style="width:100%;margin-top:10px">View my orders ↗</button>`);}catch(err){toast(err.message);}}
- if(e.target.id==="addProductForm"){e.preventDefault();try{const f=new FormData(e.target);await api("/api/admin/products",{method:"POST",body:f});toast("Product added.");adminProductsView();loadProducts();}catch(err){toast(err.message);}}
+ if(e.target.id==="productForm"){
+   e.preventDefault();
+   const id=e.target.dataset.productId;
+   try{
+     const f=new FormData(e.target);
+     if(id)await api("/api/admin/products/"+id,{method:"PATCH",body:f});
+     else await api("/api/admin/products",{method:"POST",body:f});
+     toast(id?"Product updated.":"Product added.");
+     adminProductsView();loadProducts();
+   }catch(err){toast(err.message);}
+ }
 });
 function setSession(d){
   if(SB_MODE){
@@ -404,13 +427,132 @@ function logout(){
 $("#accountBtn").onclick=()=>state.token?accountView():signInView();
 function accountView(){openDrawer(`<p class="eyebrow">YOUR ACCOUNT</p><h2 id="drawerTitle">Hello, ${escapeHtml(state.user?.name||"there")}.</h2><p>${escapeHtml(state.user?.email||"")}</p><button class="primary-button" id="myOrdersBtn" style="width:100%">My orders ↗</button><button class="secondary-button" id="logoutBtn" style="margin-top:12px">Sign out</button>${state.user?.role==="admin"?`<button class="secondary-button" id="showAdmin" style="margin:12px 0 0 8px">Open admin dashboard</button>`:""}`);}
 function checkoutView(){if(!state.cart.length)return cartView();const total=state.cart.reduce((n,i)=>n+i.price*i.quantity,0);openDrawer(`<p class="eyebrow">ALMOST YOURS</p><h2 id="drawerTitle">Checkout</h2><p>Order total: <b>${money(total)}</b></p><form id="checkoutForm" class="form-stack"><label>Full name<input name="customerName" required value="${escapeHtml(state.user?.name||"")}" autocomplete="name"></label><label>Email<input name="email" type="email" required value="${escapeHtml(state.user?.email||"")}" autocomplete="email"></label><label>Phone number<input name="phone" type="tel" required placeholder="+254 7XX XXX XXX"></label><label>Delivery address<input name="address" required placeholder="Town, estate, street and delivery details"></label><label>Payment method<select name="paymentMethod" required><option value="Cash on delivery">Cash on delivery</option><option value="M-Pesa on delivery">M-Pesa (confirm on delivery)</option><option value="M-Pesa via WhatsApp">M-Pesa via WhatsApp — pay ${WHATSAPP.display}</option><option value="Bank transfer">Bank transfer (manual confirmation)</option></select></label><div class="notice">M-Pesa payments go to <b>${WHATSAPP.display}</b> by Send Money. WhatsApp is used to confirm your order and M-Pesa code — it never asks for your PIN.</div><button class="primary-button">Place order · ${money(total)} ↗</button><button type="button" class="secondary-button" id="backToCart">Back to bag</button></form>`);$("#backToCart").onclick=cartView;}
-async function ordersView(){if(!state.token)return signInView("Sign in to view your orders.");try{const rows=await api("/api/orders/mine");openDrawer(`<p class="eyebrow">YOUR PURCHASES</p><h2 id="drawerTitle">My orders</h2>${rows.length?rows.map(o=>`<div class="order-card"><b>Order #${o.id}</b><span style="float:right;font-size:11px;font-weight:700">${escapeHtml(o.status)}</span><p>${o.items.map(i=>`${escapeHtml(i.name)} × ${i.quantity}`).join(", ")}</p><small>${escapeHtml(o.created_at)} · ${money(o.total)} · ${escapeHtml(o.payment_method)}</small></div>`).join(""):'<p>You haven’t placed an order yet.</p>'}`);}catch(e){toast(e.message);}}
+async function ordersView(){
+  if(!state.token)return signInView("Sign in to view your orders.");
+  try{
+    const rows=await api("/api/orders/mine");
+    const statusNote = status => ({
+      Pending:"Awaiting confirmation from the store.",
+      Processing:"The store is preparing your order.",
+      Shipped:"Your order is on its way.",
+      Completed:"This order is complete. Thank you!",
+      Cancelled:"This order was cancelled and stock was returned."
+    }[status] || "");
+    openDrawer(`<p class="eyebrow">YOUR PURCHASES</p><h2 id="drawerTitle">My orders</h2>
+      <p class="muted">Every order is shown here, including pending ones. When the store confirms or ships an order, the new status appears here.</p>
+      <button class="secondary-button" id="refreshOrders" style="width:100%">Refresh orders ↻</button>
+      <h3 class="subhead">Order history</h3>
+      ${rows.length?rows.map(o=>`<div class="order-card">
+        <div class="order-head"><b>Order #${o.id}</b>${statusPill(o.status)}</div>
+        ${statusNote(o.status)?`<p>${escapeHtml(statusNote(o.status))}</p>`:""}
+        <p>${o.items.map(i=>`${escapeHtml(i.name)} × ${i.quantity}`).join(", ")}</p>
+        <small>${escapeHtml(formatDate(o.created_at))} · ${money(o.total)} · ${escapeHtml(o.payment_method)}</small>
+      </div>`).join(""):'<div class="empty-state">You haven’t placed an order yet.</div>'}`);
+    const refresh=$("#refreshOrders");
+    if(refresh)refresh.onclick=ordersView;
+  }catch(e){toast(e.message);}
+}
 function adminLoginView(){if(state.user?.role==="admin"){adminView();return;}signInView("Use your administrator account. Customer accounts cannot access admin tools.");}
-async function adminView(){try{const s=await api("/api/admin/summary");openDrawer(`<p class="eyebrow">STORE MANAGEMENT</p><h2 id="drawerTitle">Admin dashboard</h2><p>Signed in as ${escapeHtml(state.user.email)}.</p><div class="admin-stats"><div class="stat"><small>Products</small><b>${s.products}</b></div><div class="stat"><small>Orders</small><b>${s.orders}</b></div><div class="stat"><small>Customers</small><b>${s.customers}</b></div><div class="stat"><small>Recorded revenue</small><b style="font-size:20px">${money(s.revenue)}</b></div></div><button class="primary-button" id="adminProductsBtn">Manage products ↗</button> <button class="secondary-button" id="adminOrdersBtn">Manage orders</button><h3 class="subhead">Recent orders</h3>${s.recentOrders.length?s.recentOrders.map(o=>`<div class="admin-row"><span><b>#${o.id} · ${escapeHtml(o.customer_name)}</b><br><small>${escapeHtml(o.created_at)}</small></span><span>${money(o.total)}<br>${escapeHtml(o.status)}</span></div>`).join(""):"<p>No orders yet.</p>"}`);}catch(e){toast(e.message);if(e.message.includes("Administrator"))signInView(e.message);}}
-function adminProductsView(){api("/api/products").then(rows=>{openDrawer(`<p class="eyebrow">INVENTORY</p><h2 id="drawerTitle">Manage products</h2><button class="primary-button" id="addProductBtn">+ Add a product</button>${rows.map(p=>`<div class="admin-row"><span><b>${escapeHtml(p.name)}</b><br><small>${escapeHtml(p.category)} · Stock ${p.stock}</small></span><span>${money(p.price)}<br><button class="link-button danger" data-delete-product="${p.id}">Delete</button></span></div>`).join("")}`);}).catch(e=>toast(e.message));}
-function addProductView(){openDrawer(`<p class="eyebrow">INVENTORY</p><h2 id="drawerTitle">Add product</h2><form id="addProductForm" class="form-stack"><label>Product name<input name="name" required></label><label>Description<textarea name="description" rows="3"></textarea></label><label>Category<select name="category"><option>Electronics</option><option>Fashion</option><option>Home</option><option>General</option></select></label><label>Price (KES)<input name="price" type="number" min="0" step="1" required></label><label>Stock quantity<input name="stock" type="number" min="0" step="1" value="1" required></label><label>Product image URL (optional)<input name="imageUrl" type="url" placeholder="https://..."></label><label>Or upload an image (max 5 MB)<input name="image" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label><label style="display:flex;align-items:center;gap:9px"><input name="featured" type="checkbox" value="1" style="width:auto"> Mark as popular pick</label><button class="primary-button">Save product ↗</button></form>`);}
-$("#drawerContent").addEventListener("click",async e=>{const del=e.target.closest("[data-delete-product]");if(del){if(!confirm("Delete this product from the catalogue?"))return;try{await api("/api/admin/products/"+del.dataset.deleteProduct,{method:"DELETE"});toast("Product deleted.");adminProductsView();loadProducts();}catch(err){toast(err.message);}}});
-async function adminOrdersView(){try{const rows=await api("/api/admin/orders");openDrawer(`<p class="eyebrow">FULFILMENT</p><h2 id="drawerTitle">Manage orders</h2>${rows.length?rows.map(o=>`<div class="order-card"><b>Order #${o.id} · ${escapeHtml(o.customer_name)}</b><p>${o.items.map(i=>`${escapeHtml(i.name)} × ${i.quantity}`).join(", ")}</p><small>${escapeHtml(o.email)} · ${escapeHtml(o.phone)}<br>${escapeHtml(o.address)}<br>${money(o.total)} · ${escapeHtml(o.created_at)}</small><label style="display:flex;gap:10px;align-items:center;margin-top:12px;font-size:11px">Status <select data-order-status="${o.id}">${["Pending","Processing","Shipped","Completed","Cancelled"].map(x=>`<option ${o.status===x?"selected":""}>${x}</option>`).join("")}</select></label></div>`).join(""):"<p>No orders have been placed.</p>"}`);}catch(e){toast(e.message);}}
+async function adminView(){
+  try{
+    const s=await api("/api/admin/summary");
+    const allOrders=s.allOrders||s.recentOrders||[];
+    const pending=allOrders.filter(o=>o.status==="Pending").length;
+    openDrawer(`<p class="eyebrow">STORE MANAGEMENT</p><h2 id="drawerTitle">Admin dashboard</h2>
+      <p>Signed in as ${escapeHtml(state.user.email)}.</p>
+      <div class="admin-stats">
+        <div class="stat"><small>Products</small><b>${s.products}</b></div>
+        <div class="stat"><small>Orders</small><b>${s.orders}</b></div>
+        <div class="stat"><small>Customers</small><b>${s.customers}</b></div>
+        <div class="stat"><small>Recorded revenue</small><b style="font-size:20px">${money(s.revenue)}</b></div>
+      </div>
+      <div class="notice">${pending} order${pending===1?"":"s"} awaiting confirmation.</div>
+      <button class="primary-button" id="adminProductsBtn">Manage products & pictures ↗</button>
+      <button class="secondary-button" id="adminOrdersBtn" style="margin-top:10px">Update order statuses</button>
+      <h3 class="subhead">All orders</h3>
+      ${allOrders.length?allOrders.map(o=>`<div class="admin-row"><span><b>#${o.id} · ${escapeHtml(o.customer_name)}</b><br><small>${escapeHtml(formatDate(o.created_at))}</small></span><span>${money(o.total)}<br>${statusPill(o.status)}</span></div>`).join(""):"<p>No orders yet.</p>"}`);
+  }catch(e){toast(e.message);if(e.message.includes("Administrator"))signInView(e.message);}
+}
+async function adminProductsView(){
+  try{
+    const rows=await api("/api/products");
+    state.adminProducts=rows;
+    openDrawer(`<p class="eyebrow">INVENTORY</p><h2 id="drawerTitle">Manage products & pictures</h2>
+      <p class="muted">Upload a picture or paste an image URL. The picture appears on the product card as soon as you save.</p>
+      <button class="primary-button" id="addProductBtn">+ Add a product</button>
+      <h3 class="subhead">Catalogue (${rows.length})</h3>
+      ${rows.map(p=>`<div class="admin-product-row">
+        <img class="admin-thumb" src="${escapeHtml(imageSrc(p.image))}" alt="" onerror="this.src='https://placehold.co/160x160/f0f2ec/17231f?text=Product'">
+        <div class="admin-product-info"><b>${escapeHtml(p.name)}</b><br><small>${escapeHtml(p.category)} · Stock ${p.stock} · ${p.active===false?"Hidden":"Visible"}${p.featured?" · Popular":""}</small></div>
+        <div class="admin-product-actions"><span>${money(p.price)}</span><button class="link-button" data-edit-product="${p.id}">Edit</button><button class="link-button danger" data-delete-product="${p.id}">Delete</button></div>
+      </div>`).join("")}`);
+  }catch(e){toast(e.message);}
+}
+function productFormView(p={}){
+  const editing=!!p.id;
+  const categories=["Electronics","Fashion","Home","General"];
+  openDrawer(`<p class="eyebrow">INVENTORY</p><h2 id="drawerTitle">${editing?"Edit product":"Add product"}</h2>
+    <p class="muted">Upload a picture from your device or paste an image URL. The preview below shows what customers will see.</p>
+    <form id="productForm" class="form-stack" ${editing?`data-product-id="${p.id}"`:""} enctype="multipart/form-data">
+      ${editing?`<input type="hidden" name="currentImage" value="${escapeHtml(p.image||"")}">`:""}
+      <label>Product name<input name="name" value="${escapeHtml(p.name||"")}" required></label>
+      <label>Description<textarea name="description" rows="3">${escapeHtml(p.description||"")}</textarea></label>
+      <label>Category<select name="category">${categories.map(c=>`<option ${p.category===c?"selected":""}>${c}</option>`).join("")}</select></label>
+      <label>Price (KES)<input name="price" type="number" min="0" step="1" value="${p.price??""}" required></label>
+      <label>Stock quantity<input name="stock" type="number" min="0" step="1" value="${p.stock??1}" required></label>
+      <div class="image-field">
+        <label>Product picture (JPG, PNG, WEBP or GIF, max 5 MB)<input name="image" id="productImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+        <img id="productImagePreview" class="image-preview" src="${escapeHtml(p.image?imageSrc(p.image):"")}" alt="Product image preview">
+        <label>Or paste an image URL (leave empty to keep the current picture)<input name="imageUrl" id="productImageUrl" type="url" value="${escapeHtml(p.image&&!/^https?:\/\//i.test(p.image)?"":p.image||"")}" placeholder="https://..."></label>
+      </div>
+      <label style="display:flex;align-items:center;gap:9px"><input name="featured" type="checkbox" value="1" ${p.featured?"checked":""} style="width:auto"> Mark as popular pick</label>
+      <label style="display:flex;align-items:center;gap:9px"><input name="active" type="hidden" value="0"><input name="active" type="checkbox" value="1" ${p.active===false?"":"checked"} style="width:auto"> Show this product in the shop</label>
+      <button class="primary-button">${editing?"Save changes":"Add product"} ↗</button>
+      <button type="button" class="secondary-button" id="cancelProduct">Back to products</button>
+    </form>`);
+  const input=$("#productImageInput"), url=$("#productImageUrl"), preview=$("#productImagePreview");
+  const originalImage = p.image ? imageSrc(p.image) : "";
+  if(input)input.addEventListener("change",()=>{
+    const file=input.files&&input.files[0];
+    if(!file)return;
+    const reader=new FileReader();
+    reader.onload=()=>{preview.src=reader.result;};
+    reader.readAsDataURL(file);
+    if(url)url.value="";
+  });
+  if(url)url.addEventListener("input",()=>{preview.src=url.value.trim()||originalImage;});
+  const cancel=$("#cancelProduct");
+  if(cancel)cancel.onclick=adminProductsView;
+}
+function addProductView(){productFormView();}
+function editProductView(p){productFormView(p);}
+$("#drawerContent").addEventListener("click",async e=>{
+  const edit=e.target.closest("[data-edit-product]");
+  if(edit){
+    const p=(state.adminProducts||[]).find(item=>String(item.id)===String(edit.dataset.editProduct));
+    if(p)editProductView(p);
+    return;
+  }
+  const del=e.target.closest("[data-delete-product]");
+  if(del){
+    if(!confirm("Delete this product from the catalogue?"))return;
+    try{await api("/api/admin/products/"+del.dataset.deleteProduct,{method:"DELETE"});toast("Product deleted.");adminProductsView();loadProducts();}
+    catch(err){toast(err.message);}
+  }
+});
+async function adminOrdersView(){
+  try{
+    const rows=await api("/api/admin/orders");
+    openDrawer(`<p class="eyebrow">FULFILMENT</p><h2 id="drawerTitle">Manage orders</h2>
+      <p class="muted">Change an order's status here. The customer sees the new status in My orders after refreshing.</p>
+      ${rows.length?rows.map(o=>`<div class="order-card">
+        <div class="order-head"><b>Order #${o.id} · ${escapeHtml(o.customer_name)}</b>${statusPill(o.status)}</div>
+        <p>${o.items.map(i=>`${escapeHtml(i.name)} × ${i.quantity}`).join(", ")}</p>
+        <small>${escapeHtml(o.email)} · ${escapeHtml(o.phone)}<br>${escapeHtml(o.address)}<br>${money(o.total)} · ${escapeHtml(formatDate(o.created_at))}</small>
+        <label class="status-control">Status <select data-order-status="${o.id}">${["Pending","Processing","Shipped","Completed","Cancelled"].map(x=>`<option ${o.status===x?"selected":""}>${x}</option>`).join("")}</select></label>
+      </div>`).join(""):"<div class=\"empty-state\">No orders have been placed.</div>"}`);
+  }catch(e){toast(e.message);}
+}
 $("#drawerContent").addEventListener("change",async e=>{const s=e.target.closest("[data-order-status]");if(s){try{await api("/api/admin/orders/"+s.dataset.orderStatus,{method:"PATCH",body:JSON.stringify({status:s.value})});toast("Order status updated.");}catch(err){toast(err.message);}}});
 $("#ordersLink").onclick=e=>{e.preventDefault();ordersView();};$("#adminLink").onclick=e=>{e.preventDefault();adminLoginView();};
 if($("#newsletterForm"))$("#newsletterForm").addEventListener("submit",e=>{e.preventDefault();toast("Thanks for your interest! Newsletter delivery needs an email service connection.");e.target.reset();});
