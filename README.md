@@ -20,7 +20,8 @@ A responsive, full-stack starter project inspired by the two supplied visual ref
 
 ## GitHub Pages static preview
 The `main` branch publishes the `public/` folder to GitHub Pages at
-https://kariukimoses-254.github.io/mosey-online-shopping-system/
+https://kariukimoses.is-a.dev/mosey-online-shopping-system/
+(also reachable at https://kariukimoses-254.github.io/mosey-online-shopping-system/, which redirects to the custom domain).
 
 That preview uses `public/products.json` as a read-only catalogue so browsing, search, filters, the bag and WhatsApp ordering work without a server. Accounts, sign-in, checkout, order tracking, the admin dashboard and the AI assistant require the Express + SQLite app above; they are intentionally unavailable in the static preview.
 
