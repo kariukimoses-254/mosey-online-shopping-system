@@ -55,45 +55,40 @@ alter table public.products enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 
+-- Security-definer helper avoids recursive profile reads inside RLS policies.
+create or replace function public.is_admin()
+returns boolean language sql security definer stable set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin');
+$$;
+revoke all on function public.is_admin() from public;
+grant execute on function public.is_admin() to anon, authenticated;
+
 -- Public read of active products; only admins manage the catalogue.
 drop policy if exists "Public can view active products" on public.products;
 create policy "Public can view active products" on public.products for select
-using (active or (
-  auth.uid() is not null and exists (
-    select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-  )
-));
+using (active or public.is_admin());
 drop policy if exists "Admins insert products" on public.products;
 create policy "Admins insert products" on public.products for insert to authenticated
-with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+with check (public.is_admin());
 drop policy if exists "Admins update products" on public.products;
 create policy "Admins update products" on public.products for update to authenticated
-using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'))
-with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+using (public.is_admin()) with check (public.is_admin());
 drop policy if exists "Admins delete products" on public.products;
 create policy "Admins delete products" on public.products for delete to authenticated
-using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'));
+using (public.is_admin());
 
 -- Customers see only their own orders; admins see all.
 drop policy if exists "Customers read own orders or admins read all" on public.orders;
 create policy "Customers read own orders or admins read all" on public.orders for select to authenticated
-using (user_id = auth.uid() or exists (
-  select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-));
+using (user_id = auth.uid() or public.is_admin());
 drop policy if exists "Read items for own orders or admins" on public.order_items;
 create policy "Read items for own orders or admins" on public.order_items for select to authenticated
 using (exists (
-  select 1 from public.orders o where o.id = order_id and (
-    o.user_id = auth.uid() or exists (
-      select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-    )
-  )
+  select 1 from public.orders o where o.id = order_id and (o.user_id = auth.uid() or public.is_admin())
 ));
 drop policy if exists "Users read own profile or admins read profiles" on public.profiles;
 create policy "Users read own profile or admins read profiles" on public.profiles for select to authenticated
-using (id = auth.uid() or exists (
-  select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-));
+using (id = auth.uid() or public.is_admin());
 drop policy if exists "Users update own display name" on public.profiles;
 create policy "Users update own display name" on public.profiles for update to authenticated
 using (id = auth.uid()) with check (id = auth.uid());
@@ -111,12 +106,8 @@ create policy "Anyone can view product images" on storage.objects for select
 using (bucket_id = 'product-images');
 drop policy if exists "Admins manage product images" on storage.objects;
 create policy "Admins manage product images" on storage.objects for all to authenticated
-using (bucket_id = 'product-images' and exists (
-  select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-))
-with check (bucket_id = 'product-images' and exists (
-  select 1 from public.profiles p where p.id = auth.uid() and p.role = 'admin'
-));
+using (bucket_id = 'product-images' and public.is_admin())
+with check (bucket_id = 'product-images' and public.is_admin());
 
 -- Create a profile automatically on signup (display_name comes from signup metadata).
 create or replace function public.handle_new_user()

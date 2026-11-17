@@ -384,7 +384,16 @@ $("#drawerContent").addEventListener("submit",async e=>{
  if(e.target.id==="addProductForm"){e.preventDefault();try{const f=new FormData(e.target);await api("/api/admin/products",{method:"POST",body:f});toast("Product added.");adminProductsView();loadProducts();}catch(err){toast(err.message);}}
 });
 function setSession(d){
-  if(SB_MODE){sbStoreSession({access_token:d.token, refresh_token:d.refreshToken, user:d.user});return;}
+  if(SB_MODE){
+    state.token=d.token||state.token;
+    state.refreshToken=d.refreshToken||state.refreshToken;
+    state.user=d.user||state.user;
+    localStorage.setItem("mosey_token",state.token);
+    if(state.refreshToken)localStorage.setItem("mosey_refresh_token",state.refreshToken);
+    if(state.user)localStorage.setItem("mosey_user",JSON.stringify(state.user));
+    $("#accountBtn").textContent=state.user?.name?.split(" ")[0]||"Sign in";
+    return;
+  }
   state.token=d.token;state.user=d.user;localStorage.setItem("mosey_token",state.token);localStorage.setItem("mosey_user",JSON.stringify(state.user));$("#accountBtn").textContent=state.user.name.split(" ")[0];
 }
 function logout(){
