@@ -1,12 +1,33 @@
 const $ = (s) => document.querySelector(s);
 const state = { products:[], category:"", query:"", sort:"featured", cart:JSON.parse(localStorage.getItem("mosey_cart")||"[]"), token:localStorage.getItem("mosey_token")||"", user:JSON.parse(localStorage.getItem("mosey_user")||"null"), authMode:"login" };
 const REMEMBER_EMAIL_KEY = "mosey_remember_email";
+const STATIC_PREVIEW = location.hostname.endsWith("github.io") || new URLSearchParams(location.search).has("static");
+let staticCatalogCache = null;
+async function staticCatalog(){
+  if(!staticCatalogCache){
+    const res=await fetch("products.json");
+    if(!res.ok)throw new Error("The static catalogue could not be loaded.");
+    staticCatalogCache=(await res.json()).map(p=>({...p,image:String(p.image||"").startsWith("/")?p.image.slice(1):p.image}));
+  }
+  return staticCatalogCache;
+}
 const money = n => new Intl.NumberFormat("en-KE",{style:"currency",currency:"KES",maximumFractionDigits:0}).format(Number(n)||0);
 const WHATSAPP = { local:"0793489901", display:"0793 489 901", international:"+254 793 489 901", wa:"254793489901" };
 const waLink = (text="Hello Mosey Shop, I'd like to place an order.") => `https://wa.me/${WHATSAPP.wa}?text=${encodeURIComponent(text)}`;
 const escapeHtml = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove("show"),2800);}
 async function api(url, options={}) {
+  if(STATIC_PREVIEW){
+    const parsed=new URL(url,location.origin);
+    if(parsed.pathname==="/api/products"){
+      const rows=await staticCatalog();
+      const q=(parsed.searchParams.get("q")||"").toLowerCase();
+      const cat=parsed.searchParams.get("category")||"";
+      return rows.filter(p=>(!cat||p.category===cat)&&(!q||`${p.name} ${p.description} ${p.category}`.toLowerCase().includes(q)));
+    }
+    if(parsed.pathname==="/api/categories")return [...new Set((await staticCatalog()).map(p=>p.category))].sort();
+    throw new Error("Accounts, orders and the assistant need the live store. In this preview you can browse and order on WhatsApp.");
+  }
   const headers = {...(options.headers||{})};
   if(state.token) headers.Authorization=`Bearer ${state.token}`;
   if(options.body && !(options.body instanceof FormData)) headers["Content-Type"]="application/json";
@@ -55,7 +76,7 @@ $("#drawerContent").addEventListener("click",async e=>{
  if(e.target.id==="addProductBtn"){addProductView();}
 });
 function signInView(message=""){state.authMode="login";authView(message);}
-function authView(message=""){const reg=state.authMode==="register";const remembered=localStorage.getItem(REMEMBER_EMAIL_KEY)||"";openDrawer(`<p class="eyebrow">YOUR MOSEY ACCOUNT</p><h2 id="drawerTitle">${reg?"Create your account":"Welcome back."}</h2><p>${message?escapeHtml(message):reg?"Join us to checkout and keep track of your orders.":"Sign in to continue shopping and view your orders."}</p><form class="form-stack" id="authForm">${reg?`<label>Full name<input name="name" required autocomplete="name"></label>`:""}<label>Email address<input name="email" type="email" value="${escapeHtml(remembered)}" required autocomplete="email"></label><label>Password<input name="password" type="password" minlength="${reg?8:1}" required autocomplete="${reg?"new-password":"current-password"}"></label>${reg?"":`<label style="display:flex;align-items:center;gap:9px;font-weight:600"><input name="remember" type="checkbox" ${remembered?"checked":""} style="width:auto"> Remember my email on this device</label>`}<button class="primary-button">${reg?"Create account":"Sign in"} ↗</button></form><p class="switch-line">${reg?"Already have an account?":"New to Mosey Shop?"} <button class="link-button" id="switchAuth">${reg?"Sign in":"Create account"}</button></p><hr style="border:0;border-top:1px solid var(--line);margin:28px 0"><button class="secondary-button" id="showAdmin">Administrator sign in</button>`);
+function authView(message=""){if(STATIC_PREVIEW){openDrawer(`<p class="eyebrow">LIVE STORE FEATURES</p><h2 id="drawerTitle">Sign-in is not in this preview</h2><div class="notice">This GitHub page is a static preview, so accounts, orders and the shopping assistant are not available here. You can still browse the collection, add items to your bag and use <a href="whatsapp.html">WhatsApp ordering</a> to place an order.</div><p class="muted">Run the app locally or use the deployed store for sign-in and order tracking.</p>`);return;}const reg=state.authMode==="register";const remembered=localStorage.getItem(REMEMBER_EMAIL_KEY)||"";openDrawer(`<p class="eyebrow">YOUR MOSEY ACCOUNT</p><h2 id="drawerTitle">${reg?"Create your account":"Welcome back."}</h2><p>${message?escapeHtml(message):reg?"Join us to checkout and keep track of your orders.":"Sign in to continue shopping and view your orders."}</p><form class="form-stack" id="authForm">${reg?`<label>Full name<input name="name" required autocomplete="name"></label>`:""}<label>Email address<input name="email" type="email" value="${escapeHtml(remembered)}" required autocomplete="email"></label><label>Password<input name="password" type="password" minlength="${reg?8:1}" required autocomplete="${reg?"new-password":"current-password"}"></label>${reg?"":`<label style="display:flex;align-items:center;gap:9px;font-weight:600"><input name="remember" type="checkbox" ${remembered?"checked":""} style="width:auto"> Remember my email on this device</label>`}<button class="primary-button">${reg?"Create account":"Sign in"} ↗</button></form><p class="switch-line">${reg?"Already have an account?":"New to Mosey Shop?"} <button class="link-button" id="switchAuth">${reg?"Sign in":"Create account"}</button></p><hr style="border:0;border-top:1px solid var(--line);margin:28px 0"><button class="secondary-button" id="showAdmin">Administrator sign in</button>`);
 }
 $("#drawerContent").addEventListener("submit",async e=>{
  if(e.target.id==="authForm"){e.preventDefault();const f=new FormData(e.target),body=Object.fromEntries(f.entries());const reg=state.authMode==="register";const remember=!reg&&!!e.target.elements.remember?.checked;delete body.remember;try{const d=await api("/api/auth/"+(reg?"register":"login"),{method:"POST",body:JSON.stringify(body)});setSession(d);if(remember)localStorage.setItem(REMEMBER_EMAIL_KEY,d.user.email);else if(!reg)localStorage.removeItem(REMEMBER_EMAIL_KEY);toast(`Welcome, ${d.user.name}.`);if(state.cart.length)checkoutView();else accountView();}catch(err){toast(err.message);} }
@@ -236,4 +257,4 @@ function mountChat() {
 }
 $("#year").textContent=new Date().getFullYear();
 if(state.user)$("#accountBtn").textContent=state.user.name.split(" ")[0];
-renderCartCount();loadFilters();loadProducts();mountChat();
+renderCartCount();loadFilters();loadProducts();if(!STATIC_PREVIEW)mountChat();

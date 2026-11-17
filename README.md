@@ -18,6 +18,12 @@ A responsive, full-stack starter project inspired by the two supplied visual ref
 - Node.js 20 or later
 - Internet connection for Google Fonts and the sample Unsplash product images (replace these with your own licensed product images for production)
 
+## GitHub Pages static preview
+The `main` branch publishes the `public/` folder to GitHub Pages at
+https://kariukimoses-254.github.io/mosey-online-shopping-system/
+
+That preview uses `public/products.json` as a read-only catalogue so browsing, search, filters, the bag and WhatsApp ordering work without a server. Accounts, sign-in, checkout, order tracking, the admin dashboard and the AI assistant require the Express + SQLite app above; they are intentionally unavailable in the static preview.
+
 ## Run locally
 1. Extract the ZIP.
 2. Open a terminal inside the extracted `mosey_online_shopping_system` folder.
