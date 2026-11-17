@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Browse every product in the Mosey Shop collection.">
+  <title>Shop all products — Mosey Shop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="announcement"><p><span class="announce-dot" aria-hidden="true"></span> Order on WhatsApp · Pay by M-Pesa to <b>0793 489 901</b></p><a href="whatsapp.html">How it works ↗</a></div>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark">m</span><span>mosey<span class="brand-light">shop</span></span></a>
+  <div class="search-wrap"><span>⌕</span><input id="search" type="search" placeholder="Search products, categories..." aria-label="Search products"></div>
+  <nav class="top-actions"><button class="text-button" id="accountBtn">Sign in</button><button class="cart-button" id="cartBtn">Bag <span id="cartCount">0</span></button></nav>
+</header>
+<nav class="page-nav" aria-label="Pages"><a href="index.html">Home</a><a href="shop.html" class="active" aria-current="page">Shop</a><a href="whatsapp.html">WhatsApp</a></nav>
+<main>
+<section class="page-hero">
+  <p class="eyebrow"><span class="dot"></span> THE FULL COLLECTION</p>
+  <h1>Everything worth<br><em>bringing home.</em></h1>
+  <p class="muted">Browse every product in the Mosey edit — filter by category, sort your way, and add your favourites to the bag.</p>
+  <div class="page-badges"><span>20 products</span><span>3 categories</span><span>M-Pesa &amp; WhatsApp</span></div>
+</section>
+<section class="shop-section shop-full" id="shop">
+  <h2 class="sr-only">All products</h2>
+  <div class="shop-toolbar">
+    <div class="filters" id="shopFilters"><button class="filter active" data-category="">All items</button><button class="filter" data-category="Electronics">Tech</button><button class="filter" data-category="Fashion">Style</button><button class="filter" data-category="Home">Home</button></div>
+    <label class="shop-sort">Sort by <select id="sortProducts"><option value="featured">Featured</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option><option value="name">Name: A–Z</option></select></label>
+  </div>
+  <p class="shop-summary" id="productCount">Loading the collection…</p>
+  <div id="productGrid" class="product-grid"><div class="loading">Loading the collection…</div></div>
+</section>
+</main>
+<footer><div class="footer-intro"><a class="brand" href="index.html"><span class="brand-mark">m</span><span>mosey<span class="brand-light">shop</span></span></a><p>Good finds for everyday life.</p></div><nav class="footer-links" aria-label="Footer"><a href="shop.html">Shop</a><a href="whatsapp.html">WhatsApp</a><a href="#" id="ordersLink">My orders</a><a href="#" id="adminLink">Admin</a></nav><div class="footer-contact"><small>ORDER &amp; PAY</small><b>0793 489 901</b><a href="whatsapp.html">WhatsApp · M-Pesa Send Money ↗</a></div><small>© <span id="year"></span> Mosey Shop. Built for everyday living.</small></footer>
+
+<div class="overlay" id="overlay" hidden><section class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><button class="close" id="closeDrawer" aria-label="Close">×</button><div id="drawerContent"></div></section></div>
+<div class="toast" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body></html>

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Shop everyday essentials with Mosey Shop.">
+  <title>Mosey Shop — Find your everyday favourite</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="announcement"><p><span class="announce-dot" aria-hidden="true"></span> Order on WhatsApp · Pay by M-Pesa to <b>0793 489 901</b></p><a href="whatsapp.html">How it works ↗</a></div>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark">m</span><span>mosey<span class="brand-light">shop</span></span></a>
+  <div class="search-wrap"><span>⌕</span><input id="search" type="search" placeholder="Search products, categories..." aria-label="Search products"></div>
+  <nav class="top-actions"><button class="text-button" id="accountBtn">Sign in</button><button class="cart-button" id="cartBtn">Bag <span id="cartCount">0</span></button></nav>
+</header>
+<nav class="page-nav" aria-label="Pages"><a href="index.html" class="active" aria-current="page">Home</a><a href="shop.html">Shop</a><a href="whatsapp.html">WhatsApp</a></nav>
+<main>
+<section class="hero">
+  <div class="hero-copy"><p class="eyebrow"><span class="dot"></span> THE EVERYDAY EDIT</p><h1>Good finds.<br><em>Better living.</em></h1><p class="hero-description">Thoughtful essentials for your style, your space and everything in between — picked to make ordinary days feel a little better.</p>
+  <div class="hero-actions"><button class="primary-button" id="shopNow">Explore the collection <span>↗</span></button><a class="ghost-button" href="whatsapp.html">Order on WhatsApp</a></div>
+  <div class="hero-badges"><span>20 curated products</span><span>M-Pesa &amp; WhatsApp</span><span>Doorstep delivery</span></div></div>
+  <div class="hero-art"><div class="hero-image"></div><div class="floating-note"><span class="note-icon">✦</span><span><b>Made for your everyday</b><small>Discover something good.</small></span></div><div class="vertical-label">STYLE · TECH · HOME</div></div>
+</section>
+<section class="trust-strip"><div><b>✦</b><span><strong>Curated with care</strong><small>Chosen for everyday quality</small></span></div><div><b>↗</b><span><strong>Simple checkout</strong><small>Secure and straightforward</small></span></div><div><b>◷</b><span><strong>Order tracking</strong><small>Follow your order status</small></span></div><div><b>♡</b><span><strong>Customer-first service</strong><small>Real help when you need it</small></span></div></section>
+<section class="shop-section" id="shop">
+  <div class="section-heading"><div><p class="eyebrow">THE COLLECTION</p><h2>Find your next favourite.</h2><p class="muted">Useful things. Good design. Everyday value.</p></div><div class="filters"><button class="filter active" data-category="">All items</button><button class="filter" data-category="Electronics">Tech</button><button class="filter" data-category="Fashion">Style</button><button class="filter" data-category="Home">Home</button></div></div>
+  <div id="productGrid" class="product-grid"><div class="loading">Loading the collection…</div></div>
+</section>
+<section class="wide-promo"><div><p class="eyebrow">A LITTLE SOMETHING EXTRA</p><h2>Everyday upgrades<br>start right here.</h2><p>Browse the edit and find practical pieces you’ll love using — with WhatsApp ordering and M-Pesa payment when you are ready.</p><button class="light-button" id="promoShop">Shop all products ↗</button></div><div class="promo-shape"><div class="promo-circle"></div><span>GOOD<br>THINGS<br>INSIDE.</span></div></section>
+<section class="newsletter"><div><p class="eyebrow">STAY IN THE LOOP</p><h2>Good things, delivered.</h2><p class="muted">Get product updates and new-arrival news. Prefer to chat? Message us on WhatsApp.</p></div><form id="newsletterForm"><input type="email" placeholder="Your email address" required><button class="primary-button">Keep me posted ↗</button></form></section>
+</main>
+<footer><div class="footer-intro"><a class="brand" href="index.html"><span class="brand-mark">m</span><span>mosey<span class="brand-light">shop</span></span></a><p>Good finds for everyday life.</p></div><nav class="footer-links" aria-label="Footer"><a href="shop.html">Shop</a><a href="whatsapp.html">WhatsApp</a><a href="#" id="ordersLink">My orders</a><a href="#" id="adminLink">Admin</a></nav><div class="footer-contact"><small>ORDER &amp; PAY</small><b>0793 489 901</b><a href="whatsapp.html">WhatsApp · M-Pesa Send Money ↗</a></div><small>© <span id="year"></span> Mosey Shop. Built for everyday living.</small></footer>
+
+<div class="overlay" id="overlay" hidden><section class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><button class="close" id="closeDrawer" aria-label="Close">×</button><div id="drawerContent"></div></section></div>
+<div class="toast" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body></html>

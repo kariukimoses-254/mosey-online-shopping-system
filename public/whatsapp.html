@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Order from Mosey Shop on WhatsApp and pay by M-Pesa Send Money to 0793 489 901.">
+  <title>Order &amp; pay on WhatsApp — Mosey Shop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,600;1,9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="announcement"><p><span class="announce-dot" aria-hidden="true"></span> Order on WhatsApp · Pay by M-Pesa to <b>0793 489 901</b></p><a href="#how">How it works ↗</a></div>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="brand-mark">m</span><span>mosey<span class="brand-light">shop</span></span></a>
+  <div class="search-wrap"><span>⌕</span><input id="search" type="search" placeholder="Search products, categories..." aria-label="Search products"></div>
+  <nav class="top-actions"><button class="text-button" id="accountBtn">Sign in</button><button class="cart-button" id="cartBtn">Bag <span id="cartCount">0</span></button></nav>
+</header>
+<nav class="page-nav" aria-label="Pages"><a href="index.html">Home</a><a href="shop.html">Shop</a><a href="whatsapp.html" class="active" aria-current="page">WhatsApp</a></nav>
+<main>
+<section class="page-hero wa-hero">
+  <p class="eyebrow"><span class="dot"></span> CHAT · ORDER · PAY</p>
+  <h1>Order on WhatsApp.<br><em>Pay by M-Pesa.</em></h1>
+  <p class="muted wa-lede">Message Mosey Shop to confirm your order, then send payment by M-Pesa Send Money to <b>0793 489 901</b>. It is the quickest way to reach us.</p>
+  <div class="wa-actions">
+    <a class="primary-button" id="waChatLink" href="https://wa.me/254793489901?text=Hello%20Mosey%20Shop%2C%20I%27d%20like%20to%20place%20an%20order." target="_blank" rel="noopener">Chat on WhatsApp ↗</a>
+    <button class="secondary-button" id="copyNumber" type="button" data-number="0793489901">Copy number</button>
+  </div>
+  <div class="wa-number-card">
+    <span class="wa-badge" aria-hidden="true">✆</span>
+    <span><small>WHATSAPP &amp; M-PESA</small><b>0793 489 901</b><small>International: +254 793 489 901</small></span>
+  </div>
+</section>
+
+<section class="wa-section" id="how">
+  <div class="wa-grid">
+    <div class="wa-card">
+      <p class="eyebrow">HOW IT WORKS</p>
+      <h2>Three simple steps.</h2>
+      <ol class="wa-steps">
+        <li><span>1</span><div><b>Build your order</b><p>Browse the shop and add your favourites to the bag.</p></div></li>
+        <li><span>2</span><div><b>Confirm on WhatsApp</b><p>Tap the WhatsApp button and send us your items, name and delivery address.</p></div></li>
+        <li><span>3</span><div><b>Pay by M-Pesa</b><p>Send the total by M-Pesa Send Money to 0793 489 901, then share the confirmation code.</p></div></li>
+      </ol>
+    </div>
+    <aside class="wa-card wa-pay">
+      <p class="eyebrow">PAYMENT DETAILS</p>
+      <h2>M-Pesa Send Money</h2>
+      <dl class="wa-details">
+        <div><dt>Number</dt><dd>0793 489 901</dd></div>
+        <div><dt>Name</dt><dd>Mosey Shop</dd></div>
+        <div><dt>Reference</dt><dd>Your order number</dd></div>
+      </dl>
+      <p class="wa-hint">WhatsApp confirms your order; the money moves through M-Pesa Send Money on your phone. Never share your M-Pesa PIN with anyone.</p>
+      <button class="secondary-button" id="copyNumber2" type="button" data-number="0793489901">Copy M-Pesa number</button>
+    </aside>
+  </div>
+</section>
+
+<section class="wa-section" id="message">
+  <div class="wa-card wa-builder">
+    <p class="eyebrow">MESSAGE BUILDER</p>
+    <h2>Send your order details.</h2>
+    <p class="muted">Fill this in and we will open WhatsApp with a ready-to-send message.</p>
+    <form id="whatsappForm" class="form-stack wa-form">
+      <label>Your name<input name="name" required autocomplete="name"></label>
+      <label>Phone number<input name="phone" type="tel" required autocomplete="tel" placeholder="+254 7XX XXX XXX"></label>
+      <label>Items you would like<textarea name="items" rows="3" required placeholder="e.g. Wireless Earbuds × 1, Scented Candle × 2"></textarea></label>
+      <label>Delivery address<textarea name="address" rows="2" required placeholder="Town, estate, street and delivery details"></textarea></label>
+      <button class="primary-button">Open WhatsApp with my order ↗</button>
+      <p class="wa-hint">Sending this message does not charge you. Payment only happens when you confirm M-Pesa Send Money on your phone.</p>
+    </form>
+  </div>
+</section>
+
+<section class="wa-section">
+  <div class="wa-banner">
+    <div><h2>Prefer to browse first?</h2><p>See all 20 products in the Mosey collection.</p></div>
+    <a class="light-button" href="shop.html">Shop all products ↗</a>
+  </div>
+</section>
+</main>
+<footer><div class="footer-intro"><a class="brand" href="index.html"><span class="brand-mark">m</span><span>mosey<span class="brand-light">shop</span></span></a><p>Good finds for everyday life.</p></div><nav class="footer-links" aria-label="Footer"><a href="shop.html">Shop</a><a href="whatsapp.html">WhatsApp</a><a href="#" id="ordersLink">My orders</a><a href="#" id="adminLink">Admin</a></nav><div class="footer-contact"><small>ORDER &amp; PAY</small><b>0793 489 901</b><a href="whatsapp.html">WhatsApp · M-Pesa Send Money ↗</a></div><small>© <span id="year"></span> Mosey Shop. Built for everyday living.</small></footer>
+
+<div class="overlay" id="overlay" hidden><section class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle"><button class="close" id="closeDrawer" aria-label="Close">×</button><div id="drawerContent"></div></section></div>
+<div class="toast" id="toast" role="status"></div>
+<script src="app.js"></script>
+</body></html>
