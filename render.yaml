@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: mosey-shop
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_NAME
+        value: Store Administrator
+      - key: ADMIN_EMAIL
+        value: admin@example.com
+      - key: ADMIN_PASSWORD
+        value: ChangeMe123!

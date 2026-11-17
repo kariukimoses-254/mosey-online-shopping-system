@@ -29,6 +29,11 @@ app.use((_req, res, next) => {
 });
 app.use(express.json({ limit: "1mb" }));
 app.use("/uploads", express.static(uploadDir));
+// Serve the runtime mode flag from the server so any deployed host runs in live mode,
+// while the static GitHub Pages copy (which only has public/app-config.js) stays in preview mode.
+app.get("/app-config.js", (_req, res) => {
+  res.type("application/javascript").send('window.MOSEY_MODE = "live";');
+});
 app.use(express.static(path.join(root, "public")));
 
 const db = new Database(path.join(dataDir, "shop.db"));

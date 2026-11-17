@@ -40,6 +40,20 @@ That preview uses `public/products.json` as a read-only catalogue so browsing, s
    or `npm start`.
 6. Open `http://localhost:5000`.
 
+## Deploy the full app (Render)
+
+The GitHub Pages link is a static preview without accounts. To get a public URL where **sign-in, checkout, orders and the admin dashboard work**, deploy the Express app:
+
+1. Push this repository to GitHub (the `main` branch already builds the Pages preview).
+2. Sign in at https://render.com with GitHub and choose **New + → Blueprint**.
+3. Connect `kariukimoses-254/mosey-online-shopping-system`; Render detects `render.yaml`.
+4. Review the settings (`npm install` / `node server.js`) and click **Apply**.
+5. Open the generated `https://mosey-shop-xxxx.onrender.com` URL — it serves the storefront and API from one origin, so sign-in works there.
+
+Default admin on a fresh deployment: `admin@example.com` / `ChangeMe123!`. Change `ADMIN_PASSWORD` in the Render dashboard and restart the service before sharing the site.
+
+> Note: Render's free plan uses an ephemeral filesystem, so SQLite data (new accounts and orders) is reset when the service restarts or redeploys. Add a persistent disk on a paid plan, or migrate to a hosted database, before using it for real orders.
+
 ## WhatsApp ordering and M-Pesa payments
 The **WhatsApp** page (`whatsapp.html`) connects customers to Mosey Shop on **0793 489 901** (international **+254 793 489 901**).
 

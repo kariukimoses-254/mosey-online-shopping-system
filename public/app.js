@@ -1,7 +1,7 @@
 const $ = (s) => document.querySelector(s);
 const state = { products:[], category:"", query:"", sort:"featured", cart:JSON.parse(localStorage.getItem("mosey_cart")||"[]"), token:localStorage.getItem("mosey_token")||"", user:JSON.parse(localStorage.getItem("mosey_user")||"null"), authMode:"login" };
 const REMEMBER_EMAIL_KEY = "mosey_remember_email";
-const STATIC_PREVIEW = !["localhost","127.0.0.1"].includes(location.hostname) || new URLSearchParams(location.search).has("static");
+const STATIC_PREVIEW = new URLSearchParams(location.search).has("static") || window.MOSEY_MODE !== "live";
 let staticCatalogCache = null;
 async function staticCatalog(){
   if(!staticCatalogCache){
